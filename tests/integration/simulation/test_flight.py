@@ -717,7 +717,7 @@ def test_invalid_controller_parameter_count(calisto_robust):
         )
 
 
-def test_environment_methods_accessible_in_controller(
+def test_environment_methods_accessible_in_controller(  # pylint: disable=too-many-statements
     calisto_robust, example_plain_env
 ):
     """Test that all environment methods are accessible within the controller.
