@@ -10,12 +10,12 @@ name: Sync fork with upstream
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # 5:00 AM PT daily (runs before Jules scout at 6)
+    - cron: '0 12 * * *'  # 5:00 AM PT daily
   workflow_dispatch:       # manual trigger from Actions tab
 
 env:
   UPSTREAM_REPO: RocketPy-Team/RocketPy  # change per fork
-  BRANCH: main                          # change if upstream uses 'main'
+  BRANCH: master                          # change if upstream uses 'main'
 
 jobs:
   sync:
