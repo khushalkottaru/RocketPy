@@ -115,7 +115,7 @@ def test_wind_plots_wrapping_direction(mock_show, example_plain_env):  # pylint:
         type="custom_atmosphere",
         pressure=None,
         temperature=300,
-        wind_u=[(0, 1), (5000, -1)],   # changes sign across altitude
+        wind_u=[(0, 1), (5000, -1)],  # changes sign across altitude
         wind_v=[(0, -6), (5000, -6)],  # stays negative → heading near 350°/10°
     )
     # Verify that the wind direction actually wraps through 0°/360° in this
