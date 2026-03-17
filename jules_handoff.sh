@@ -1,19 +1,23 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────
-# jules-handoff.sh
-# Pulls a Jules branch and launches Claude Code with full context
+# jules_handoff.sh
+# Checks out a Jules scout branch and launches Claude Code with context
 #
 # Usage:
-#   ./jules-handoff.sh                        # interactive branch picker
-#   ./jules-handoff.sh <branch-name>          # direct branch name
-#   ./jules-handoff.sh <github-pr-url>        # paste a Jules PR URL
+#   ./jules_handoff.sh                  # interactive branch picker
+#   ./jules_handoff.sh <branch-name>    # direct branch name
+# ─────────────────────────────────────────────────────────
+
+# ── Config — only thing to change when reusing across repos
+DEFAULT_BRANCH="master"
+UPSTREAM_FALLBACK="https://github.com/RocketPy-Team/RocketPy.git"
 # ─────────────────────────────────────────────────────────
 
 set -e
 
 REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_DIR" ]; then
-  echo "❌ Not inside a git repo. Run this from your astropy fork directory."
+  echo "❌ Not inside a git repo."
   exit 1
 fi
 
@@ -23,34 +27,22 @@ cd "$REPO_DIR"
 
 UPSTREAM_URL=$(git remote get-url upstream 2>/dev/null || echo "")
 if [ -z "$UPSTREAM_URL" ]; then
-  echo "❌ No upstream remote found. Run: git remote add upstream <original-repo-url>"
+  echo "❌ No upstream remote found. Run: git remote add upstream $UPSTREAM_FALLBACK"
   exit 1
 fi
 
-# Parse owner/repo from URL (handles both https and ssh)
-UPSTREAM_REPO=$(echo "$UPSTREAM_URL"   | sed 's|https://github.com/||'   | sed 's|git@github.com:||'   | sed 's|[.]git$||')
+UPSTREAM_REPO=$(echo "$UPSTREAM_URL" \
+  | sed 's|https://github.com/||' \
+  | sed 's|git@github.com:||' \
+  | sed 's|[.]git$||')
 
 echo "📡 Upstream: $UPSTREAM_REPO"
 
-# ── Step 1: Determine the Jules branch ───────────────────
+# ── Step 1: Determine the branch ─────────────────────────
 
 if [ -n "$1" ]; then
-  INPUT="$1"
-
-  # If it's a GitHub PR URL, extract the branch from the API
-  if [[ "$INPUT" == https://github.com/* ]]; then
-    echo "🔍 Fetching branch from PR URL..."
-    PR_NUMBER=$(echo "$INPUT" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+')
-    REPO_SLUG=$(echo "$INPUT" | sed 's|https://github.com/||' | cut -d'/' -f1-2)
-    BRANCH=$(curl -s "https://api.github.com/repos/$REPO_SLUG/pulls/$PR_NUMBER" \
-      | python3 -c "import sys,json; print(json.load(sys.stdin)['head']['ref'])")
-    echo "📌 Branch: $BRANCH"
-  else
-    BRANCH="$INPUT"
-  fi
-
+  BRANCH="$1"
 else
-  # Interactive: list recent Jules branches
   echo ""
   echo "🔍 Fetching recent branches from origin..."
   git fetch origin --quiet
@@ -61,13 +53,13 @@ else
 
   BRANCHES=$(git branch -r --sort=-committerdate \
     | grep 'origin/' \
-    | grep -v 'origin/main' \
+    | grep -v "origin/$DEFAULT_BRANCH" \
     | sed 's|origin/||' \
     | head -20)
 
   if [ -z "$BRANCHES" ]; then
-    echo "No branches found other than main."
-    echo "Jules may not have created a branch yet — check jules.google.com"
+    echo "No branches found other than $DEFAULT_BRANCH."
+    echo "Jules may not have created a branch yet."
     exit 1
   fi
 
@@ -89,7 +81,7 @@ else
   fi
 fi
 
-# ── Step 2: Pull the branch locally ──────────────────────
+# ── Step 2: Check out the branch ─────────────────────────
 
 echo ""
 echo "📥 Checking out branch: $BRANCH"
@@ -105,166 +97,135 @@ fi
 
 echo "✅ On branch: $BRANCH"
 
-# ── Step 3: Read and extract selected issue from scout_report.md ──
+# ── Step 3: Read scout_report.md ─────────────────────────
 
 echo ""
-echo "📋 Reading Jules scout report..."
+echo "📋 Reading scout report..."
 
 SCOUT_REPORT=""
+SELECTED=""
+
 if [ -f "scout_report.md" ]; then
-  # Read the selected issue number from the SELECTED ISSUE line
   SELECTED=$(grep "SELECTED ISSUE:" scout_report.md | grep -oE '[0-9]+' | head -1)
 
   if [ -z "$SELECTED" ]; then
     echo ""
-    echo "👉 Open scout_report.md and fill in the SELECTED ISSUE number (1, 2, or 3)"
-    echo "   Then re-run this script."
+    echo "👉 Open scout_report.md and fill in the SELECTED ISSUE number, then re-run."
     exit 0
   fi
 
   echo "✅ Selected issue: #$SELECTED"
 
-  # Extract only the selected issue section
-  SCOUT_REPORT=$(python3 - "$SELECTED" << 'PYEOF'
+  SCOUT_REPORT=$(python3 << PYEOF
 import sys, re
 
-selected = sys.argv[1]
+selected = "$SELECTED"
 with open("scout_report.md") as f:
     text = f.read()
 
-# Find the section matching "## Issue N"
-pattern = rf"(## Issue {selected} —.*?)(?=
-## Issue \d|$)"
+pattern = r"(## Issue " + selected + r" \u2014.*?)(?=## Issue \d|\Z)"
 match = re.search(pattern, text, re.DOTALL)
 if match:
     print(match.group(1).strip())
 else:
-    print(f"Could not find Issue {selected} in scout_report.md")
+    print(text)
 PYEOF
 )
-  echo "✅ Extracted Issue $SELECTED from scout_report.md"
+  echo "✅ Extracted issue $SELECTED from scout_report.md"
 else
-  echo "⚠️  No scout_report.md found — will use PR description only"
+  echo "⚠️  No scout_report.md found on this branch"
 fi
 
-# ── Step 4: Get PR info and extract issue number ──────────
+# ── Step 4: Check for competing PRs ──────────────────────
 
-PR_BODY=""
-PR_TITLE=""
-ISSUE_NUMBER=""
+ISSUE_NUMBER="$SELECTED"
 ISSUE_STATUS=""
+ISSUE_TITLE=""
 ISSUE_BODY=""
 
-if command -v gh &> /dev/null; then
-  PR_JSON=$(gh pr list --head "$BRANCH" --json body,title,url 2>/dev/null || echo "[]")
-  PR_TITLE=$(echo "$PR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['title'] if d else '')" 2>/dev/null || echo "")
-  PR_BODY=$(echo "$PR_JSON"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['body']  if d else '')" 2>/dev/null || echo "")
+if command -v gh &> /dev/null && [ -n "$ISSUE_NUMBER" ]; then
+  echo "🔍 Checking upstream issue #$ISSUE_NUMBER..."
+  ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --repo "$UPSTREAM_REPO" --json state,title,body 2>/dev/null || echo "")
 
-  # Try to extract issue number from PR body or branch name
-  ISSUE_NUMBER=$(echo "$PR_BODY $BRANCH" | grep -oE '#[0-9]+|issues/[0-9]+' | grep -oE '[0-9]+' | head -1)
+  if [ -n "$ISSUE_JSON" ]; then
+    ISSUE_STATUS=$(echo "$ISSUE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))")
+    ISSUE_TITLE=$(echo "$ISSUE_JSON"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('title',''))")
+    ISSUE_BODY=$(echo "$ISSUE_JSON"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('body','')[:800])")
+    echo "📌 Issue #$ISSUE_NUMBER: $ISSUE_STATUS — $ISSUE_TITLE"
 
-  if [ -n "$ISSUE_NUMBER" ]; then
-    echo "🔍 Checking upstream issue #$ISSUE_NUMBER..."
-    ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --repo "$UPSTREAM_REPO" --json state,title,body 2>/dev/null || echo "")
-
-    if [ -n "$ISSUE_JSON" ]; then
-      ISSUE_STATUS=$(echo "$ISSUE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))")
-      ISSUE_TITLE=$(echo "$ISSUE_JSON"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('title',''))")
-      ISSUE_BODY=$(echo "$ISSUE_JSON"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('body','')[:800])")
-      echo "📌 Issue #$ISSUE_NUMBER is: $ISSUE_STATUS — $ISSUE_TITLE"
-
-      if [ "$ISSUE_STATUS" = "closed" ]; then
-        echo ""
-        echo "⛔  Issue #$ISSUE_NUMBER is already CLOSED — someone already fixed it."
-        echo "   Aborted. Pick a different Jules branch."
-        exit 0
-      fi
-    fi
-
-    # Check for competing open PRs
-    echo "🔍 Checking for competing PRs on issue #$ISSUE_NUMBER..."
-    COMPETING=$(gh pr list --repo "$UPSTREAM_REPO"       --search "fixes #$ISSUE_NUMBER"       --json number,title,state,isDraft,url       2>/dev/null || echo "[]")
-
-    PR_COUNT=$(echo "$COMPETING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
-
-    if [ "$PR_COUNT" -gt "0" ]; then
+    if [ "$ISSUE_STATUS" = "closed" ]; then
       echo ""
-      echo "⛔  STOP — There is already an open PR for issue #$ISSUE_NUMBER:"
-      echo "$COMPETING" | python3 -c "
+      echo "⛔  Issue #$ISSUE_NUMBER is already closed. Pick a different issue."
+      exit 0
+    fi
+  fi
+
+  echo "🔍 Checking for competing PRs..."
+  COMPETING=$(gh pr list \
+    --repo "$UPSTREAM_REPO" \
+    --search "fixes #$ISSUE_NUMBER" \
+    --json number,title,isDraft,url \
+    2>/dev/null || echo "[]")
+
+  PR_COUNT=$(echo "$COMPETING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+
+  if [ "$PR_COUNT" -gt "0" ]; then
+    echo ""
+    echo "⛔  STOP — There is already an open PR for issue #$ISSUE_NUMBER:"
+    echo "$COMPETING" | python3 -c "
 import sys, json
-prs = json.load(sys.stdin)
-for pr in prs:
+for pr in json.load(sys.stdin):
     draft = ' [DRAFT]' if pr.get('isDraft') else ''
     print('  #' + str(pr['number']) + draft + ': ' + pr['title'])
     print('  ' + pr['url'])
 "
-      echo ""
-      echo "   Don't waste your time — pick a different Jules branch."
-      exit 0
-    else
-      echo "✅ No competing PRs found — you're clear to proceed."
-    fi
+    echo ""
+    echo "   Pick a different issue."
+    exit 0
+  else
+    echo "✅ No competing PRs — you're clear to proceed."
   fi
 fi
 
-# ── Step 5: Write Claude Code context file ────────────────
+# ── Step 5: Build context file and launch Claude Code ────
 
 CONTEXT_FILE="/tmp/jules-context-$(date +%s).md"
 
 cat > "$CONTEXT_FILE" << CONTEXT
-# Jules Handoff Context
+# Jules Handoff — $UPSTREAM_REPO
 
 ## Branch
 $BRANCH
 
-## Jules PR Title
-${PR_TITLE:-"(not found)"}
-
----
-
-## Jules Scout Report (scout.md)
-${SCOUT_REPORT:-"(No scout_report.md on this branch — refer to PR description below)"}
-
----
-
-## Jules PR Description
-${PR_BODY:-"(No PR found — check jules.google.com)"}
-
----
-
-## Upstream Issue #${ISSUE_NUMBER:-"unknown"}
+## Selected Issue
+#${ISSUE_NUMBER:-"unknown"} — ${ISSUE_TITLE:-"unknown"}
 Status: ${ISSUE_STATUS:-"unknown"}
-Title:  ${ISSUE_TITLE:-"unknown"}
-
-${ISSUE_BODY:-"(Could not fetch issue body — check https://github.com/astropy/astropy/issues)"}
 
 ---
 
-## Your job (Claude Code)
+## Scout Report
+${SCOUT_REPORT:-"(no scout_report.md found)"}
 
-The scout report and issue above are your source of truth — ignore any diff noise
-from main being ahead of this branch due to the daily sync automation.
+---
 
-1. Read scout.md carefully — Jules has already identified the files and approach.
+## Issue Body
+${ISSUE_BODY:-"(could not fetch)"}
 
-2. Check if the issue is still open and unassigned upstream before starting:
-   https://github.com/astropy/astropy/issues/${ISSUE_NUMBER:-""}
+---
 
-3. Run the existing tests for the relevant subpackage first to establish a baseline:
-   \`python -m pytest astropy/<subpackage>/tests/ -x -v\`
+## Instructions for Claude Code
 
-4. Implement the fix described in scout.md. Follow astropy standards:
-   - Type hints on all new functions
-   - Numpy-style docstrings
-   - Tests in the corresponding tests/ directory
-   - No public API changes unless the issue explicitly requires it
+Read CLAUDE.md before doing anything else — it contains scope rules and
+conventions you must follow.
 
-5. Once tests pass, give me a 3-sentence summary of what changed for the PR description.
+1. Read the scout report and issue above carefully.
+2. Run existing tests for the relevant module first to establish a baseline:
+   \`python -m pytest tests/ -x -q -k <relevant_test_file>\`
+3. Implement the fix. Stay strictly within the scope of the issue.
+4. Write tests using pytest.approx for any float assertions.
+5. Ensure all new public functions have NumPy docstrings.
+6. When done, give me a 3-sentence summary of what changed for the PR description.
 CONTEXT
-
-echo "✅ Context ready"
-
-# ── Step 6: Print context and launch Claude Code ──────────
 
 echo ""
 echo "🚀 Launching Claude Code..."
