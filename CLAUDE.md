@@ -69,3 +69,44 @@ Environment → Motor → Rocket → Flight
 - **Test names:** `test_methodname_expectedbehaviour` pattern. Use `pytest.approx` for float comparisons.
 - **Tests follow AAA** (Arrange, Act, Assert) with fixtures from `tests/fixtures/`.
 - **Backward compatibility:** Use deprecation warnings before removing public API features; document changes in CHANGELOG.
+
+# RocketPy fork instructions for Claude Code
+
+## What this repo is
+RocketPy is a 6-DOF rocket trajectory simulator in pure Python. The main source
+code lives in `rocketpy/`. Tests live in `tests/`. The default branch is `master`.
+
+## My workflow
+- I am a solo contributor. Jules scouts issues and creates a branch. I hand off
+  to you (Claude Code) to build the implementation.
+- Branches follow the pattern `scout/YYYY-MM-DD-brief-description`.
+- Read `scout_report.md` in the repo root at the start of every session — it
+  contains the selected issue and any context Jules gathered.
+
+## Scope rules — read these carefully
+- Only touch files directly relevant to the issue. Do not refactor unrelated code.
+- Do not modify existing function signatures unless the issue explicitly requires it.
+- Do not add type hints — the codebase does not use them.
+- Do not rename variables or reformat code outside the files you are changing.
+- If you think something adjacent should be fixed, mention it in a comment to me
+  instead of changing it.
+
+## Code conventions
+- Docstrings: NumPy format only. Every new public function and class needs one.
+  Parameter types go in the docstring (e.g. `x : float`), not as type hints.
+  Do not document units in the type field — just the type name.
+- No magic numbers. Any numeric constant needs a comment explaining what it is.
+- Follow the style of the surrounding code exactly — indentation, spacing, naming.
+
+## Before you consider something done
+- All new public functions have NumPy docstrings
+- Tests written and passing
+- No files modified outside the scope of the issue
+- No type hints added anywhere
+- Diff is clean — no stray whitespace changes, no reformatting of untouched lines
+
+## What to ask me before doing
+- Any change to an existing public API
+- Adding a new dependency
+- Creating a new file that isn't a test or a direct implementation of the issue
+- Anything that feels like it goes beyond the issue scopeß
