@@ -124,6 +124,22 @@ def test_wind_plots_wrapping_direction(mock_show, example_plain_env):  # pylint:
     assert abs(low_dir - high_dir) > 180, (
         "Test setup error: wind direction should cross 0°/360° boundary"
     )
+    # Verify that the helper inserts NaN breaks into the direction and altitude
+    # arrays at the wraparound point, which is the core of the fix.
+    directions = np.array(
+        [example_plain_env.wind_direction(i) for i in example_plain_env.plots.grid],
+        dtype=float,
+    )
+    altitudes = np.array(example_plain_env.plots.grid, dtype=float)
+    directions_broken, altitudes_broken = (
+        example_plain_env.plots._break_direction_wraparound(directions, altitudes)
+    )
+    assert np.any(np.isnan(directions_broken)), (
+        "Expected NaN breaks in direction array at 0°/360° wraparound"
+    )
+    assert np.any(np.isnan(altitudes_broken)), (
+        "Expected NaN breaks in altitude array at 0°/360° wraparound"
+    )
     # Verify info() and atmospheric_model() plots complete without error
     assert example_plain_env.info() is None
     assert example_plain_env.plots.atmospheric_model() is None
