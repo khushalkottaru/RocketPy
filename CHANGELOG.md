@@ -82,6 +82,8 @@ Attention: The newest changes should be on top -->
 - BUG: Fix parallel Monte Carlo simulation showing incorrect iteration count [#806](https://github.com/RocketPy-Team/RocketPy/pull/806)
 - BUG: Fix missing titles in roll parameter plots for fin sets [#934](https://github.com/RocketPy-Team/RocketPy/pull/934)
 - BUG: Duplicate _controllers in Flight.TimeNodes.merge() [#931](https://github.com/RocketPy-Team/RocketPy/pull/931)
+- BUG: Fix incorrect Jacobian in `only_radial_burn` branch of `SolidMotor.evaluate_geometry` [#935](https://github.com/RocketPy-Team/RocketPy/pull/935)
+- BUG: Add explicit timeouts to ThrustCurve API requests [#935](https://github.com/RocketPy-Team/RocketPy/pull/935)
 
 ## [v1.11.0] - 2025-11-01
 
