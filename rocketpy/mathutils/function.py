@@ -48,6 +48,7 @@ INTERPOLATION_TYPES = {
 }
 EXTRAPOLATION_TYPES = {"zero": 0, "natural": 1, "constant": 2}
 
+
 class SourceType(Enum):
     """Enumeration of the source types for the Function class.
     The source can be either a callable or an array.
@@ -55,6 +56,7 @@ class SourceType(Enum):
 
     CALLABLE = 0
     ARRAY = 1
+
 
 class Function:  # pylint: disable=too-many-public-methods
     """Class converts a python function or a data sequence into an object
