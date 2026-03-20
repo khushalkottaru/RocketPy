@@ -10,6 +10,7 @@ import warnings
 from bisect import bisect_left
 from collections.abc import Iterable
 from copy import deepcopy
+from enum import Enum
 from functools import cached_property
 from inspect import signature
 from pathlib import Path
@@ -25,7 +26,7 @@ from scipy.interpolate import (
 )
 
 from rocketpy.plots.plot_helpers import show_or_save_plot
-from rocketpy.tools import deprecated
+from rocketpy.tools import deprecated, from_hex_decode, to_hex_encode
 
 # Numpy 1.x compatibility,
 # TODO: remove these lines when all dependencies support numpy>=2.0.0
@@ -47,6 +48,13 @@ INTERPOLATION_TYPES = {
 }
 EXTRAPOLATION_TYPES = {"zero": 0, "natural": 1, "constant": 2}
 
+class SourceType(Enum):
+    """Enumeration of the source types for the Function class.
+    The source can be either a callable or an array.
+    """
+
+    CALLABLE = 0
+    ARRAY = 1
 
 class Function:  # pylint: disable=too-many-public-methods
     """Class converts a python function or a data sequence into an object
